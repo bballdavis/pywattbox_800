@@ -9,22 +9,27 @@ PyWattBox 800 provides a simple, robust Python interface for communicating with 
 ## Features
 
 - **Complete Device Control**: Turn outlets on/off, toggle, reset with optional delays
-- **Power Monitoring**: Get real-time power consumption data for individual outlets and system-wide status
+- **Optimized Power Monitoring**: Get real-time power consumption data with bulk operations optimized for performance
+- **Intelligent Device Compatibility**: Gracefully handles devices with varying feature support (WB150/250 vs WB800+ series)
 - **UPS Integration**: Monitor UPS status including battery health, charge level, and runtime
 - **Auto Reboot Management**: Configure and monitor automatic reboot functionality
-- **Device Information**: Access firmware version, model, hostname, and service tag
+- **Device Information**: Access firmware version, model, hostname, and service tag with automatic fallback mechanisms
 - **Network Discovery**: Scan for WattBox devices on your network
-- **Robust Communication**: Built-in error handling, authentication, and connection management
-- **Context Manager Support**: Clean resource management with `with` statements
+- **Enhanced Error Handling**: Comprehensive error handling with device-specific capability detection
+- **Robust Communication**: Built-in authentication, response validation, and connection management
+- **Context Manager Support**: Clean resource management with automatic connection cleanup
+- **Performance Optimized**: Bulk operations use immediate response processing without artificial delays
 
 ## Supported WattBox Models
 
-This library supports all WattBox 800 series models and is compatible with:
+This library supports all WattBox 800 series models and intelligently adapts to device capabilities:
 
-- WB-800-IPVM series (12+ outlet models)
-- Other WattBox models supporting Integration Protocol v2.4
-- Both Telnet (port 23) and SSH (port 22) connections
-- Firmware versions 1.3.0.4+ for SSH support
+- **WB-800-IPVM series** (12+ outlet models) - Full feature support including individual outlet power monitoring
+- **WB-150/250 series** - Basic outlet control (power monitoring features automatically disabled)
+- **Any WattBox model supporting Integration Protocol v2.4**
+- **Connection Types**: Both Telnet (port 23) and SSH (port 22) connections
+- **Firmware Support**: All versions, with SSH requiring firmware 1.3.0.4+
+- **Automatic Feature Detection**: Library automatically detects and adapts to device capabilities
 
 ## Installation
 
@@ -74,17 +79,30 @@ with WattBoxClient(host="192.168.1.100", username="wattbox", password="wattbox")
 
 ```python
 with WattBoxClient(host="192.168.1.100") as client:
-    # Get system-wide power status
+    # Get system-wide power status (if supported by device)
     power_status = client.get_power_status()
     if power_status:
         print(f"Total Power: {power_status.power_watts}W")
         print(f"Total Current: {power_status.current_amps}A")
         print(f"Voltage: {power_status.voltage_volts}V")
+        print(f"Safe Voltage: {power_status.safe_voltage_status}")
+    else:
+        print("Power monitoring not supported on this device")
     
     # Get individual outlet power data
     outlet_power = client.get_outlet_power_status(1)
     if outlet_power:
         print(f"Outlet 1 Power: {outlet_power.power_watts}W")
+        print(f"Outlet 1 Current: {outlet_power.current_amps}A")
+        print(f"Outlet 1 Voltage: {outlet_power.voltage_volts}V")
+    else:
+        print("Individual outlet power monitoring not supported")
+    
+    # Bulk power data collection (optimized for performance)
+    all_power_data = client.get_all_outlets_power_data()
+    for outlet_num, power_info in all_power_data.items():
+        if power_info:
+            print(f"Outlet {outlet_num}: {power_info.power_watts}W")
 ```
 
 ### UPS Monitoring
@@ -95,9 +113,14 @@ with WattBoxClient(host="192.168.1.100") as client:
     if client.get_ups_connection_status():
         ups_status = client.get_ups_status()
         print(f"Battery Charge: {ups_status.battery_charge}%")
+        print(f"Battery Load: {ups_status.battery_load}%")
         print(f"Battery Health: {ups_status.battery_health}")
         print(f"Runtime Remaining: {ups_status.battery_runtime} minutes")
         print(f"Power Lost: {ups_status.power_lost}")
+        print(f"Alarm Enabled: {ups_status.alarm_enabled}")
+        print(f"Alarm Muted: {ups_status.alarm_muted}")
+    else:
+        print("No UPS connected to this device")
 ```
 
 ### Device Discovery
@@ -110,7 +133,7 @@ devices = discover_wattbox_devices(subnet="192.168.1")
 print(f"Found WattBox devices at: {devices}")
 ```
 
-## Advanced Usage
+### Advanced Usage
 
 ### Custom Authentication and Timeouts
 
@@ -125,16 +148,83 @@ client = WattBoxClient(
 )
 ```
 
+### Performance Monitoring
+
+```python
+import time
+
+with WattBoxClient(host="192.168.1.100") as client:
+    # Time bulk power data collection
+    start_time = time.time()
+    power_data = client.get_all_outlets_power_data()
+    elapsed = time.time() - start_time
+    
+    outlet_count = len([p for p in power_data.values() if p is not None])
+    print(f"Collected power data for {outlet_count} outlets in {elapsed:.2f}s")
+    
+    # Compare with individual calls (slower)
+    start_time = time.time()
+    for outlet_num in range(1, client.get_outlet_count() + 1):
+        power_info = client.get_outlet_power_status(outlet_num)
+    elapsed_individual = time.time() - start_time
+    
+    print(f"Individual calls took {elapsed_individual:.2f}s")
+    print(f"Bulk operation is {elapsed_individual/elapsed:.1f}x faster")
+```
+
+### Device Capability Testing
+
+```python
+with WattBoxClient(host="192.168.1.100") as client:
+    # Test what features are available
+    device_info = client.get_device_info(include_outlet_power=False)  # Faster initial check
+    
+    print(f"Device: {device_info.system_info.model}")
+    print(f"Outlets: {device_info.system_info.outlet_count}")
+    
+    # Test power monitoring capability
+    power_status = client.get_power_status()
+    if power_status:
+        print("✓ System power monitoring supported")
+    else:
+        print("✗ System power monitoring not available")
+    
+    # Test individual outlet power monitoring
+    first_outlet_power = client.get_outlet_power_status(1)
+    if first_outlet_power:
+        print("✓ Individual outlet power monitoring supported")
+    else:
+        print("✗ Individual outlet power monitoring not available")
+    
+    # Test UPS features
+    if client.get_ups_connection_status():
+        print("✓ UPS connected and monitoring available")
+        ups_status = client.get_ups_status()
+        print(f"  Battery: {ups_status.battery_charge}% ({ups_status.battery_health})")
+    else:
+        print("✗ No UPS connected")
+```
+
 ### Bulk Operations
 
 ```python
 with WattBoxClient(host="192.168.1.100") as client:
-    # Get all outlet information with power data
+    # Get all outlet information with optimized power data collection
     outlets = client.get_all_outlets_info(include_power_data=True)
-    
-    # Turn on all outlets
     for outlet in outlets:
-        client.turn_on_outlet(outlet.index)
+        status = "ON" if outlet.status else "OFF"
+        print(f"Outlet {outlet.index}: {outlet.name} - {status}")
+        if outlet.power_watts is not None:
+            print(f"  Power: {outlet.power_watts}W, {outlet.current_amps}A, {outlet.voltage_volts}V")
+    
+    # Bulk power monitoring (performance optimized)
+    power_data = client.get_all_outlets_power_data()
+    total_power = sum(info.power_watts for info in power_data.values() if info and info.power_watts)
+    print(f"Total system power consumption: {total_power}W")
+    
+    # Control multiple outlets
+    for outlet_num in range(1, 5):  # Turn on outlets 1-4
+        client.turn_on_outlet(outlet_num)
     
     # Reset all outlets with delay
     client.reset_all_outlets(delay=10)
@@ -186,9 +276,9 @@ WattBoxClient(host, port=23, username="wattbox", password="wattbox", timeout=10.
 
 #### Power Monitoring Methods
 
-- `get_power_status()` - Get system-wide power status
-- `get_outlet_power_status(outlet)` - Get power status for specific outlet
-- `get_all_outlets_power_data()` - Get power data for all outlets
+- `get_power_status()` - Get system-wide power status (returns `None` if not supported)
+- `get_outlet_power_status(outlet)` - Get power status for specific outlet (returns `None` if not supported)
+- `get_all_outlets_power_data(command_timeout=5.0)` - Get power data for all outlets (optimized bulk operation)
 
 #### UPS Methods
 
@@ -220,7 +310,7 @@ Information about a specific outlet including name, status, and power data.
 System-wide power status with current, power, voltage, and safety status.
 
 #### UPSStatus
-UPS status including battery charge, health, runtime, and alarm status.
+UPS status including battery charge percentage, battery load, health status, power lost status, runtime in minutes, and alarm settings.
 
 #### SystemInfo
 Device system information including firmware, hostname, service tag, and model.
@@ -234,6 +324,27 @@ Device system information including firmware, hostname, service tag, and model.
 - `WattBoxTimeoutError` - Timeout errors
 - `WattBoxResponseError` - Unexpected response errors
 
+## Performance Optimizations
+
+The library includes several performance optimizations:
+
+### Bulk Power Data Collection
+The `get_all_outlets_power_data()` method has been optimized to eliminate artificial delays:
+- Commands are sent immediately after receiving responses
+- No fixed delays between outlet queries
+- Significantly faster bulk operations
+- Efficient for monitoring multiple outlets
+
+### Response Validation
+- Automatic retry logic for mismatched responses
+- Input buffer clearing to prevent command/response mix-ups
+- Enhanced response validation with error recovery
+
+### Device Capability Detection
+- Automatic detection of device features (power monitoring, UPS, etc.)
+- Graceful fallback for unsupported features
+- Prevents unnecessary command timeouts on incompatible devices
+
 ## Protocol Support
 
 This library implements the SnapAV WattBox Integration Protocol v2.4, supporting:
@@ -245,29 +356,54 @@ This library implements the SnapAV WattBox Integration Protocol v2.4, supporting
 
 ## Error Handling
 
-The library includes comprehensive error handling:
+The library includes comprehensive error handling with automatic device capability detection:
 
 ```python
 from pywattbox_800 import WattBoxClient, WattBoxConnectionError, WattBoxAuthenticationError
 
 try:
     with WattBoxClient(host="192.168.1.100") as client:
+        # Get device info - automatically handles missing features
+        device_info = client.get_device_info()
+        print(f"Connected to {device_info.system_info.model}")
+        
+        # Power monitoring - gracefully handles unsupported devices
+        power_status = client.get_power_status()
+        if power_status:
+            print(f"Power monitoring: {power_status.power_watts}W")
+        else:
+            print("Power monitoring not available on this device")
+        
+        # Outlet control - always supported
         client.turn_on_outlet(1)
+        
 except WattBoxConnectionError:
-    print("Failed to connect to device")
+    print("Failed to connect to device - check IP address and network")
 except WattBoxAuthenticationError:
-    print("Invalid credentials")
+    print("Invalid credentials - check username and password")
 except Exception as e:
     print(f"Unexpected error: {e}")
 ```
 
+### Automatic Feature Detection
+The library automatically detects device capabilities:
+- **Power Monitoring**: Detects if `PowerStatus` and `OutletPowerStatus` are supported
+- **UPS Features**: Checks for UPS connection before querying status
+- **Outlet Count**: Uses multiple methods to determine the correct outlet count
+- **Error Recovery**: Retries commands with improved response matching
+
 ## Logging
 
-Enable debug logging to see detailed communication:
+Enable debug logging to see detailed communication and performance metrics:
 
 ```python
 import logging
 logging.basicConfig(level=logging.DEBUG)
+
+# Example debug output:
+# DEBUG:pywattbox_800.client:Sending command: ?OutletPowerStatus=1
+# DEBUG:pywattbox_800.client:Received response: ?OutletPowerStatus=1,1.01,0.02,116.50
+# DEBUG:pywattbox_800.client:Outlet 1 power: 1.01W, 0.02A, 116.50V (took 0.15s)
 ```
 
 ## Contributing
@@ -297,8 +433,12 @@ For issues and questions:
 ## Changelog
 
 ### v2.4.0
-- Initial implementation of Integration Protocol v2.4
-- Support for all device information, outlet control, and monitoring features
-- Comprehensive error handling and logging
-- Context manager support for clean resource management
-- Network discovery utilities
+- **Performance Optimizations**: Bulk power data collection now uses immediate response processing
+- **Enhanced Device Compatibility**: Automatic detection and graceful handling of device capabilities
+- **Improved Error Handling**: Better response validation, retry logic, and error recovery
+- **Optional Feature Support**: Power monitoring and UPS features return `None` when not supported
+- **Enhanced Logging**: Comprehensive debug logging with performance metrics
+- **Better Response Handling**: Input buffer clearing and response synchronization
+- **Context Manager Support**: Full support for `with` statements and automatic cleanup
+- **Network Discovery**: Added `discover_wattbox_devices()` utility function
+- **Robust Communication**: Enhanced authentication and connection management
